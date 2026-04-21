@@ -1,0 +1,16 @@
+🚀 Production server ready
+   Victims dir: /home/ksmo/phish-kit
+📁 Loaded 111 flows
+🚀 http://0.0.0.0:5000
+ * Serving Flask app 'serve'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://172.20.10.2:5000
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [20/Apr/2026 08:15:02] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [20/Apr/2026 08:15:02] "[36mGET /static/logo.png HTTP/1.1[0m" 304 -
+127.0.0.1 - - [20/Apr/2026 08:15:02] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [20/Apr/2026 08:15:05] "GET /start HTTP/1.1" 200 -
+127.0.0.1 - - [20/Apr/2026 08:15:08] "GET /code?sid=e6b8ff5e-0aa5-4cc7-a062-912e268f05b3 HTTP/1.1" 200 -

