@@ -405,7 +405,7 @@ DASHBOARD_HTML = """
                     <div class="form-group">
                         <label>Message (HTML):</label>
                         <textarea id="email-body" placeholder="<h2>Dear User,</h2><p>Please review the attached documents...</p>"><h2>Action Required</h2><p>Click <a href="#">here</a> to verify your account.</p></textarea>
-                        <div id="email-preview" style="border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; margin-top: 0.5rem; background: rgba(40,40,60,0.5); max-height: 200px; overflow-y: auto; font-size: 0.9rem;"></div>
+                        <div id="email-preview" style="border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; margin-top: 0.5rem; background: white; color: black;max-height: 200px; overflow-y: auto; font-size: 0.9rem;"></div>
                     </div>
                     <div style="display: flex; gap: 1rem;">
                         <button type="submit" class="btn btn-success">🚀 Send Email</button>
