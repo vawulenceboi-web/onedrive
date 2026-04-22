@@ -20,8 +20,6 @@ import redis
 
 r = redis.Redis.from_url(
     redis_url,
-    ssl=True,
-    ssl_cert_reqs=None,
     decode_responses=True
 )
 
