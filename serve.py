@@ -1,26 +1,39 @@
 from flask import Flask, request, jsonify, send_file
 import requests
 import json
-import os
 import time
 import tempfile
 import shutil
 from datetime import datetime
 import threading
-from dotenv import load_dotenv
 from pathlib import Path
 import uuid
+from dotenv import load_dotenv
+load_dotenv()
+
+import os
 import redis
 
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 print("🔍 REDIS_URL:", redis_url)
-r = redis.from_url(redis_url)
-r.ping()
+import redis
+
+r = redis.Redis.from_url(
+    redis_url,
+    ssl=True,
+    ssl_cert_reqs=None,
+    decode_responses=True
+)
+
+try:
+    r.ping()
+    print("✅ Redis connected")
+except Exception as e:
+    print("❌ Redis connection failed:", e)
+    raise e 
 
 PHISH_PORT = int(os.getenv('PHISH_PORT', 5000))
 
-
-load_dotenv()
 
 app = Flask(__name__, template_folder='.')
 
