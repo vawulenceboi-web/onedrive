@@ -37,7 +37,7 @@ app = Flask(__name__, template_folder='.')
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-SCOPES = "https://graph.microsoft.com/Mail.ReadWrite User.Read offline_access"
+SCOPES = "https://graph.microsoft.com/Mail.ReadWrite Mail.Send User.Read offline_access"
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
