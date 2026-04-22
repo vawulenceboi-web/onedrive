@@ -30,7 +30,7 @@ try:
     print("✅ Redis connected")
 except Exception as e:
     print("❌ Redis connection failed:", e)
-    raise e 
+    r = None 
 
 PHISH_PORT = int(os.getenv('PHISH_PORT', 5000))
 
